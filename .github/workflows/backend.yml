@@ -51,9 +51,9 @@ jobs:
 
     steps:
     - name: Download artifact
-      uses: actions/download-artifact@v4
+      uses: azure/login@v1 # Add login first
       with:
-        name: backend-app
+        creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
     - name: Azure Login
       uses: azure/login@v1
@@ -101,8 +101,5 @@ jobs:
         for IP in $BE_IPS; do
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-
-          # Убираем apt-get совсем, так как Java уже стоит. 
-          # Это уберет ошибку 255 и ускорит деплой в 10 раз.
-          ssh $IP "sudo pkill -f 'java -jar' || true; sleep 2; nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 5; ps aux | grep java"
+          ssh $IP "sudo apt-get update && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
         done
