@@ -36,71 +36,6 @@ module "database" {
   db_name             = var.db_name
 }
 
-# МЕНЯЕМ ИМЯ, чтобы не было конфликта (добавляем -final)
-resource "azurerm_user_assigned_identity" "appgw_identity" {
-  name                = "${var.prefix}-appgw-id-final"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-}
-
-data "azurerm_client_config" "current" {}
-
-# МЕНЯЕМ ИМЯ KV на v3, чтобы избежать проблем с soft-delete
-resource "azurerm_key_vault" "kv" {
-  name                        = "${var.prefix}-kv-musa-v3"
-  location                    = azurerm_resource_group.rg.location
-  resource_group_name         = azurerm_resource_group.rg.name
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  sku_name                    = "standard"
-  soft_delete_retention_days  = 7
-  purge_protection_enabled    = false
-}
-
-resource "azurerm_key_vault_access_policy" "sp_policy" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = data.azurerm_client_config.current.object_id
-
-  secret_permissions      = ["Get", "List", "Set", "Delete", "Purge"]
-  certificate_permissions = ["Get", "List", "Create", "Import", "Update", "Delete", "Purge"]
-}
-
-resource "azurerm_key_vault_access_policy" "appgw_policy" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_user_assigned_identity.appgw_identity.principal_id
-
-  secret_permissions      = ["Get"]
-  certificate_permissions = ["Get"]
-}
-
-# ИСПРАВЛЕННАЯ политика сертификата
-resource "azurerm_key_vault_certificate" "cert" {
-  name         = "burgergroup2-com-cert"
-  key_vault_id = azurerm_key_vault.kv.id
-
-  certificate_policy {
-    issuer_parameters {
-      name = "Self"
-    }
-    key_properties {
-      exportable = true
-      key_size   = 2048
-      key_type   = "RSA"
-      reuse_key  = true
-    }
-    secret_properties {
-      content_type = "application/x-pkcs12"
-    }
-    x509_certificate_properties {
-      subject            = "CN=burgergroup2.com"
-      validity_in_months = 12
-      key_usage          = ["cRLSign", "dataEncipherment", "digitalSignature", "keyAgreement", "keyCertSign", "keyEncipherment"]
-    }
-  }
-
-  depends_on = [azurerm_key_vault_access_policy.sp_policy]
-}
 
 module "app_gateway" {
   source              = "./modules/app_gateway"
@@ -109,9 +44,12 @@ module "app_gateway" {
   resource_group_name = azurerm_resource_group.rg.name
   appgw_subnet_id     = module.networking.appgw_subnet_id
   appgw_public_ip_id  = azurerm_public_ip.appgw_pip.id
-  
-  key_vault_cert_secret_id = azurerm_key_vault_certificate.cert.secret_id
-  appgw_identity_id        = azurerm_user_assigned_identity.appgw_identity.id
+
+  # TLS: Managed Identity для App Gateway — сделан через Azure CLI
+  appgw_identity_id = "/subscriptions/${var.subscription_id}/resourceGroups/musa-project2-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/burger-appgw-identity"
+
+  # TLS: Secret ID сертификата в Key Vault (Let's Encrypt - действует до 30.07.2026)
+  key_vault_cert_secret_id = "https://burger-keyvault-g2.vault.azure.net/secrets/burgergroup2-cert/8a4a802d17344c6e8749b41316738fd2"
 }
 
 module "vmss_fe" {
@@ -125,6 +63,7 @@ module "vmss_fe" {
   ssh_public_key         = var.vm_ssh_public_key
   vm_size                = "Standard_D2ads_v7"
 
+  # Minimal cloud-init to install node/npm for Vite frontend
   custom_data = base64encode(<<-EOF
     #!/bin/bash
     sudo apt-get update
@@ -144,10 +83,11 @@ module "vmss_be" {
   ssh_public_key         = var.vm_ssh_public_key
   vm_size                = "Standard_D2ads_v7"
 
+  # Minimal cloud-init to install Java/Maven for Backend
   custom_data = base64encode(<<-EOF
     #!/bin/bash
     sudo apt-get update
-    sudo apt-get install -y openjdk-21-jdk maven
+    sudo apt-get install -y openjdk-17-jdk maven
   EOF
   )
 }
@@ -161,6 +101,7 @@ module "sonarqube_vm" {
   vm_ssh_public_key   = var.vm_ssh_public_key
 }
 
+# (Application Insights и Log Analytics)
 module "monitoring" {
   source              = "./modules/monitoring"
   prefix              = var.prefix

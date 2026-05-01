@@ -9,6 +9,7 @@ on:
       - 'backend/**'
 
 env:
+  AZURE_WEBAPP_NAME: burger-be-app # Replace if prefix changed
   JAVA_VERSION: '21'
 
 jobs:
@@ -31,6 +32,12 @@ jobs:
     - name: Build and Test with Maven
       run: mvn clean verify
 
+    - name: SonarQube Scan
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: mvn sonar:sonar -Dsonar.projectKey=burger-backend -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} -Dsonar.login=${{ secrets.SONAR_TOKEN_BACKEND }}
+
     - name: Upload artifact for deployment
       uses: actions/upload-artifact@v4
       with:
@@ -47,7 +54,6 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: backend-app
-        path: .
 
     - name: Azure Login
       uses: azure/login@v1
@@ -77,12 +83,14 @@ jobs:
           HostName $SONAR_IP
           User azureuser
           IdentityFile ~/.ssh/id_rsa
+          PubkeyAcceptedKeyTypes +ssh-rsa
           StrictHostKeyChecking no
         
         Host 10.0.*
           User azureuser
           ProxyJump sonarqube
           IdentityFile ~/.ssh/id_rsa
+          PubkeyAcceptedKeyTypes +ssh-rsa
           StrictHostKeyChecking no
         EOF
         chmod 600 ~/.ssh/config
@@ -93,7 +101,5 @@ jobs:
         for IP in $BE_IPS; do
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-          # Самая стабильная команда запуска. База burgerbuilder-group22. 
-          # Используем GitHub Secrets.
-          ssh $IP "export DEBIAN_FRONTEND=noninteractive; sudo apt-get update -qq && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 5"
+          ssh $IP "sudo apt-get update && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
         done
