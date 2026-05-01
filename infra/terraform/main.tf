@@ -134,7 +134,8 @@ resource "azurerm_key_vault_secret" "sql_username" {
   key_vault_id = data.azurerm_key_vault.kv.id
 
   lifecycle {
-    ignore_changes = [value] # Не перезаписывать если уже существует
+    # Не перезаписывать значение если секрет уже существует в Key Vault
+    ignore_changes = [value, version]
   }
 }
 
@@ -145,14 +146,17 @@ resource "azurerm_key_vault_secret" "sql_password" {
   key_vault_id = data.azurerm_key_vault.kv.id
 
   lifecycle {
-    ignore_changes = [value] # Не перезаписывать если уже существует
+    # Не перезаписывать значение если секрет уже существует в Key Vault
+    ignore_changes = [value, version]
   }
 }
 
-# Выдать роль "Key Vault Secrets User" Managed Identity бэкенд-серверов
-# Это позволяет BE VMSS читать секреты из Key Vault БЕЗ паролей
+# Выдать роль "Key Vault Secrets User" Managed Identity бэкенд-серверов.
+# Это позволяет BE VMSS читать секреты из Key Vault БЕЗ паролей.
+# skip_service_principal_aad_check — пропускает проверку AAD, нужно для VMSS Managed Identity.
 resource "azurerm_role_assignment" "be_vmss_kv_reader" {
-  scope                = data.azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = module.vmss_be.principal_id
+  scope                            = data.azurerm_key_vault.kv.id
+  role_definition_name             = "Key Vault Secrets User"
+  principal_id                     = module.vmss_be.principal_id
+  skip_service_principal_aad_check = true # Обязательно для SystemAssigned VMSS Identity
 }
