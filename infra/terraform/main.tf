@@ -83,7 +83,7 @@ module "vmss_be" {
   ssh_public_key         = var.vm_ssh_public_key
   vm_size                = "Standard_D2ads_v7"
 
-# Minimal cloud-init to install Java/Maven for Backend
+  # Minimal cloud-init to install Java/Maven for Backend
   custom_data = base64encode(<<-EOF
     #!/bin/bash
     sudo apt-get update
