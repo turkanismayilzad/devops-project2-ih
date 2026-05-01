@@ -45,13 +45,13 @@ resource "azurerm_user_assigned_identity" "appgw_identity" {
 
 # Key Vault для хранения SSL сертификата
 resource "azurerm_key_vault" "kv" {
-  name                        = "${var.prefix}-kv-musa"
-  location                    = azurerm_resource_group.rg.location
-  resource_group_name         = azurerm_resource_group.rg.name
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  sku_name                    = "standard"
-  soft_delete_retention_days  = 7
-  purge_protection_enabled    = false
+  name                       = "${var.prefix}-kv-musa"
+  location                   = azurerm_resource_group.rg.location
+  resource_group_name        = azurerm_resource_group.rg.name
+  tenant_id                  = data.azurerm_client_config.current.tenant_id
+  sku_name                   = "standard"
+  soft_delete_retention_days = 7
+  purge_protection_enabled   = false
 }
 
 data "azurerm_client_config" "current" {}
@@ -62,7 +62,7 @@ resource "azurerm_key_vault_access_policy" "appgw_policy" {
   tenant_id    = data.azurerm_client_config.current.tenant_id
   object_id    = azurerm_user_assigned_identity.appgw_identity.principal_id
 
-  secret_permissions = ["Get"]
+  secret_permissions      = ["Get"]
   certificate_permissions = ["Get"]
 }
 
@@ -96,7 +96,7 @@ module "app_gateway" {
   resource_group_name = azurerm_resource_group.rg.name
   appgw_subnet_id     = module.networking.appgw_subnet_id
   appgw_public_ip_id  = azurerm_public_ip.appgw_pip.id
-  
+
   # Новые обязательные аргументы для HTTPS
   key_vault_cert_secret_id = azurerm_key_vault_certificate.cert.secret_id
   appgw_identity_id        = azurerm_user_assigned_identity.appgw_identity.id
