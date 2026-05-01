@@ -36,27 +36,37 @@ module "database" {
   db_name             = var.db_name
 }
 
-# Identity для App Gateway (чтобы он мог читать сертификат из Key Vault)
+# Identity для App Gateway
 resource "azurerm_user_assigned_identity" "appgw_identity" {
   name                = "${var.prefix}-appgw-identity"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
 }
 
-# Key Vault для хранения SSL сертификата
-resource "azurerm_key_vault" "kv" {
-  name                       = "${var.prefix}-kv-musa"
-  location                   = azurerm_resource_group.rg.location
-  resource_group_name        = azurerm_resource_group.rg.name
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = false
-}
-
 data "azurerm_client_config" "current" {}
 
-# Права для App Gateway на чтение сертификатов
+# Key Vault
+resource "azurerm_key_vault" "kv" {
+  name                        = "${var.prefix}-kv-musa"
+  location                    = azurerm_resource_group.rg.location
+  resource_group_name         = azurerm_resource_group.rg.name
+  tenant_id                   = data.azurerm_client_config.current.tenant_id
+  sku_name                    = "standard"
+  soft_delete_retention_days  = 7
+  purge_protection_enabled    = false
+}
+
+# Права для самого Terraform (Service Principal)
+resource "azurerm_key_vault_access_policy" "sp_policy" {
+  key_vault_id = azurerm_key_vault.kv.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+
+  secret_permissions      = ["Get", "List", "Set", "Delete", "Purge"]
+  certificate_permissions = ["Get", "List", "Create", "Import", "Update", "Delete", "Purge"]
+}
+
+# Права для App Gateway
 resource "azurerm_key_vault_access_policy" "appgw_policy" {
   key_vault_id = azurerm_key_vault.kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
@@ -66,13 +76,10 @@ resource "azurerm_key_vault_access_policy" "appgw_policy" {
   certificate_permissions = ["Get"]
 }
 
-# Существующий сертификат (который ты загрузил в Key Vault)
 resource "azurerm_key_vault_certificate" "cert" {
   name         = "burgergroup2-com-cert"
   key_vault_id = azurerm_key_vault.kv.id
 
-  # Мы предполагаем, что сертификат уже там или будет загружен. 
-  # В данном случае, это просто заглушка для ссылки в App Gateway
   certificate_policy {
     issuer_parameters {
       name = "Self"
@@ -96,8 +103,7 @@ module "app_gateway" {
   resource_group_name = azurerm_resource_group.rg.name
   appgw_subnet_id     = module.networking.appgw_subnet_id
   appgw_public_ip_id  = azurerm_public_ip.appgw_pip.id
-
-  # Новые обязательные аргументы для HTTPS
+  
   key_vault_cert_secret_id = azurerm_key_vault_certificate.cert.secret_id
   appgw_identity_id        = azurerm_user_assigned_identity.appgw_identity.id
 }
