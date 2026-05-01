@@ -1,18 +1,18 @@
 
 locals {
-  backend_address_pool_name_fe   = "${var.prefix}-beap-fe"
-  backend_address_pool_name_be   = "${var.prefix}-beap-be"
-  frontend_port_name             = "${var.prefix}-feport"
-  frontend_port_name_https       = "${var.prefix}-feport-https"
-  frontend_ip_configuration_name = "${var.prefix}-feip"
-  http_setting_name_fe           = "${var.prefix}-be-htst-fe"
-  http_setting_name_be           = "${var.prefix}-be-htst-be"
-  listener_name                  = "${var.prefix}-httplstn"
-  listener_name_https            = "${var.prefix}-httpslstn"
-  request_routing_rule_name      = "${var.prefix}-rqrt"
+  backend_address_pool_name_fe    = "${var.prefix}-beap-fe"
+  backend_address_pool_name_be    = "${var.prefix}-beap-be"
+  frontend_port_name              = "${var.prefix}-feport"
+  frontend_port_name_https        = "${var.prefix}-feport-https"
+  frontend_ip_configuration_name  = "${var.prefix}-feip"
+  http_setting_name_fe            = "${var.prefix}-be-htst-fe"
+  http_setting_name_be            = "${var.prefix}-be-htst-be"
+  listener_name                   = "${var.prefix}-httplstn"
+  listener_name_https             = "${var.prefix}-httpslstn"
+  request_routing_rule_name       = "${var.prefix}-rqrt"
   request_routing_rule_name_https = "${var.prefix}-rqrt-https"
-  url_path_map_name              = "${var.prefix}-urlpathmap"
-  redirect_config_name           = "${var.prefix}-http-to-https"
+  url_path_map_name               = "${var.prefix}-urlpathmap"
+  redirect_config_name            = "${var.prefix}-http-to-https"
 }
 
 resource "azurerm_application_gateway" "appgw" {
