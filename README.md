@@ -442,6 +442,253 @@ Wait ~5 minutes, then re-trigger the Terraform pipeline.
 
 ---
 
+## 🌐 Optional: Custom Domain + HTTPS (TLS via Azure Key Vault)
+
+### What Is This and Why Do You Need It?
+
+Right now the application is reachable at `http://51.142.251.112` — a raw IP with no encryption.  
+Browsers show **"Not Secure"**, and modern web standards require HTTPS everywhere.
+
+This optional step gives you:
+
+| Before | After |
+|---|---|
+| `http://51.142.251.112` | `https://burgerbuilder.com` |
+| ⚠️ "Not Secure" in browser | 🔒 Padlock — trusted certificate |
+| No domain, just IP | Your own branded domain |
+| Certificate stored as a file | Cert in Azure Key Vault (secure, auto-renewable) |
+
+**What is Key Vault-backed certificate?**  
+Instead of uploading the TLS certificate as a `.pfx` file directly to the Application Gateway (which means managing a secret file manually), you store the certificate in **Azure Key Vault** — a dedicated secrets manager. The App Gateway then fetches the certificate automatically using its **Managed Identity**, with zero manual handling. This is the gold standard for enterprise security and meets compliance requirements (PCI-DSS, ISO 27001, etc.).
+
+---
+
+### Step-by-Step Implementation
+
+#### 1. Buy or Register a Domain
+
+Purchase a domain from any registrar:
+- [Namecheap](https://namecheap.com) (~$10/year)
+- [GoDaddy](https://godaddy.com)
+- [Azure DNS Zones](https://portal.azure.com) (managed entirely in Azure)
+
+#### 2. Point Your Domain to the App Gateway IP
+
+In your domain registrar's DNS settings, create an **A record**:
+
+```
+Type:  A
+Name:  @  (or www)
+Value: 51.142.251.112    ← Your App Gateway public IP
+TTL:   300
+```
+
+Wait 5–30 minutes for DNS propagation. Verify:
+```bash
+nslookup burgerbuilder.com
+# Should return: 51.142.251.112
+```
+
+#### 3. Get a Free TLS Certificate (Let's Encrypt)
+
+```bash
+# Install certbot
+brew install certbot   # macOS
+# or: sudo apt-get install certbot
+
+# Generate certificate (DNS challenge - no server needed)
+certbot certonly --manual --preferred-challenges dns \
+  -d burgerbuilder.com \
+  -d www.burgerbuilder.com
+
+# Certbot will ask you to add a TXT DNS record to prove ownership.
+# Do it in your registrar's DNS panel, then press Enter.
+# Certificate files will be saved to /etc/letsencrypt/live/burgerbuilder.com/
+```
+
+Convert to `.pfx` format (required by Azure App Gateway):
+```bash
+openssl pkcs12 -export \
+  -out burger_cert.pfx \
+  -inkey /etc/letsencrypt/live/burgerbuilder.com/privkey.pem \
+  -in /etc/letsencrypt/live/burgerbuilder.com/fullchain.pem \
+  -passout pass:CertPassword123!
+```
+
+#### 4. Create Azure Key Vault and Upload Certificate
+
+```bash
+# Create Key Vault
+az keyvault create \
+  --name burger-keyvault \
+  --resource-group musa-project2-rg \
+  --location "UK South" \
+  --sku standard
+
+# Upload the certificate
+az keyvault certificate import \
+  --vault-name burger-keyvault \
+  --name burger-tls-cert \
+  --file burger_cert.pfx \
+  --password CertPassword123!
+
+# Get the certificate Secret ID (needed for Terraform)
+az keyvault certificate show \
+  --vault-name burger-keyvault \
+  --name burger-tls-cert \
+  --query "sid" -o tsv
+```
+
+#### 5. Grant App Gateway Access to Key Vault (Managed Identity)
+
+```bash
+# Get App Gateway's managed identity principal ID
+APPGW_IDENTITY=$(az network application-gateway show \
+  -g musa-project2-rg -n burger-appgw \
+  --query "identity.principalId" -o tsv)
+
+# Grant "Key Vault Secrets User" role
+az role assignment create \
+  --assignee $APPGW_IDENTITY \
+  --role "Key Vault Secrets User" \
+  --scope $(az keyvault show --name burger-keyvault --query id -o tsv)
+```
+
+#### 6. Add HTTPS Listener to App Gateway (Terraform)
+
+Add the following to `modules/app_gateway/main.tf`:
+
+```hcl
+# Give App Gateway a Managed Identity to access Key Vault
+resource "azurerm_user_assigned_identity" "appgw_identity" {
+  name                = "${var.prefix}-appgw-identity"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+}
+
+# Reference the TLS certificate stored in Key Vault
+resource "azurerm_application_gateway" "appgw" {
+  # ... existing config ...
+
+  # Add identity block
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.appgw_identity.id]
+  }
+
+  # Add HTTPS port
+  frontend_port {
+    name = "https-port"
+    port = 443
+  }
+
+  # Reference cert from Key Vault
+  ssl_certificate {
+    name                = "burger-tls-cert"
+    key_vault_secret_id = var.key_vault_cert_secret_id  # Output from Step 4
+  }
+
+  # Add HTTPS listener
+  http_listener {
+    name                           = "https-listener"
+    frontend_ip_configuration_name = local.frontend_ip_configuration_name
+    frontend_port_name             = "https-port"
+    protocol                       = "Https"
+    ssl_certificate_name           = "burger-tls-cert"
+  }
+
+  # Add routing rule for HTTPS
+  request_routing_rule {
+    name               = "https-rule"
+    rule_type          = "PathBasedRouting"
+    http_listener_name = "https-listener"
+    url_path_map_name  = local.url_path_map_name
+    priority           = 90
+  }
+
+  # Redirect HTTP → HTTPS
+  redirect_configuration {
+    name                 = "http-to-https"
+    redirect_type        = "Permanent"
+    target_listener_name = "https-listener"
+    include_path         = true
+    include_query_string = true
+  }
+}
+```
+
+#### 7. Add HTTPS Rule to NSG
+
+Allow port 443 inbound on the App Gateway NSG (`modules/networking/main.tf`):
+
+```hcl
+security_rule {
+  name                       = "Allow-HTTP-HTTPS"
+  priority                   = 110
+  direction                  = "Inbound"
+  access                     = "Allow"
+  protocol                   = "Tcp"
+  source_port_range          = "*"
+  destination_port_ranges    = ["80", "443"]   # ← Add 443
+  source_address_prefix      = "*"
+  destination_address_prefix = "*"
+}
+```
+
+#### 8. Verify HTTPS is Working
+
+```bash
+# Test HTTPS
+curl -I https://burgerbuilder.com
+
+# Expected:
+# HTTP/2 200
+# content-type: text/html
+
+# Test that HTTP redirects to HTTPS
+curl -I http://burgerbuilder.com
+# Expected:
+# HTTP/1.1 301 Moved Permanently
+# Location: https://burgerbuilder.com/
+```
+
+---
+
+### Certificate Renewal (Let's Encrypt auto-renews every 90 days)
+
+Set up a cron job to auto-renew and re-upload to Key Vault:
+
+```bash
+# Add to crontab (runs monthly)
+0 0 1 * * certbot renew --quiet && \
+  openssl pkcs12 -export \
+    -out /tmp/burger_cert_new.pfx \
+    -inkey /etc/letsencrypt/live/burgerbuilder.com/privkey.pem \
+    -in /etc/letsencrypt/live/burgerbuilder.com/fullchain.pem \
+    -passout pass:CertPassword123! && \
+  az keyvault certificate import \
+    --vault-name burger-keyvault \
+    --name burger-tls-cert \
+    --file /tmp/burger_cert_new.pfx \
+    --password CertPassword123!
+```
+
+> 💡 **Pro Tip**: Azure Key Vault also supports **automatic certificate renewal** via its native integration with DigiCert and GlobalSign CAs — no manual renewal needed at all.
+
+---
+
+### Summary: What Changes After This Step
+
+```
+Before:  http://51.142.251.112/api/ingredients   (HTTP, no encryption)
+After:   https://burgerbuilder.com/api/ingredients  (HTTPS, TLS 1.3, 🔒)
+         http://burgerbuilder.com  →  301 Redirect to HTTPS (automatic)
+```
+
+The certificate private key **never touches** any server directly — it lives only in Azure Key Vault, and the App Gateway retrieves it securely via Managed Identity. This is the same pattern used by banks and large enterprises.
+
+---
+
 ## 📜 License
 
 This project is part of a capstone project (IH DevOps Bootcamp) for educational purposes.

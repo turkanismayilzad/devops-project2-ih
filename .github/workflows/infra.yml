@@ -16,6 +16,7 @@ env:
   TF_VAR_sql_admin_username: ${{ secrets.SQL_ADMIN_USERNAME }}
   TF_VAR_sql_admin_password: ${{ secrets.SQL_ADMIN_PASSWORD }}
   TF_VAR_vm_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   terraform:

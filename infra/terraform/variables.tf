@@ -85,3 +85,10 @@ variable "vm_ssh_public_key" {
   description = "SSH public key for SonarQube VM"
   type        = string
 }
+
+# Используется для формирования Resource ID Managed Identity
+variable "subscription_id" {
+  description = "Azure Subscription ID"
+  type        = string
+  sensitive   = true
+}
