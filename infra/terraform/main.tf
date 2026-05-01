@@ -83,11 +83,12 @@ module "vmss_be" {
   ssh_public_key         = var.vm_ssh_public_key
   vm_size                = "Standard_D2ads_v7"
 
-  # Minimal cloud-init to install Java/Maven for Backend
+  # Cloud-init: предустановка Java 21 и jq при создании сервера
   custom_data = base64encode(<<-EOF
     #!/bin/bash
+    export DEBIAN_FRONTEND=noninteractive
     sudo apt-get update
-    sudo apt-get install -y openjdk-17-jdk maven
+    sudo apt-get install -y openjdk-21-jdk jq
   EOF
   )
 }

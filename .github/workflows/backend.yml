@@ -103,27 +103,27 @@ jobs:
           scp *.jar $IP:/home/azureuser/app.jar
 
           # Запускаем Java на сервере.
-          # Секреты получаем из Key Vault через Managed Identity VM используя curl.
-          # Это быстрее и надежнее чем установка azure-cli.
+          # Секреты получаем из Key Vault через Managed Identity VM.
           ssh $IP "
-            sudo apt-get update -qq && sudo apt-get install -y openjdk-21-jdk jq
+            # Убиваем старый процесс если он есть
             sudo pkill -f 'java -jar' || true
 
             echo 'Fetching secrets from Key Vault...'
             
-            # 1. Получаем токен доступа для Managed Identity
+            # 1. Получаем токен доступа (через IMDS)
             TOKEN=\$(curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net' | jq -r .access_token)
 
-            # 2. Получаем секреты из Key Vault используя токен
+            # 2. Получаем секреты
             SQL_USER=\$(curl -s -H \"Authorization: Bearer \${TOKEN}\" 'https://burger-keyvault-g2.vault.azure.net/secrets/sql-admin-username?api-version=7.4' | jq -r .value)
             SQL_PASS=\$(curl -s -H \"Authorization: Bearer \${TOKEN}\" 'https://burger-keyvault-g2.vault.azure.net/secrets/sql-admin-password?api-version=7.4' | jq -r .value)
 
+            # Проверка что секреты получены
             if [ -z \"\${SQL_PASS}\" ] || [ \"\${SQL_PASS}\" == \"null\" ]; then
-              echo 'ERROR: Failed to fetch secrets from Key Vault'
+              echo 'ERROR: Could not fetch secrets. Check Managed Identity permissions.'
               exit 1
             fi
 
-            # 3. Запускаем Java
+            # 3. Запуск приложения в фоне
             nohup java -jar /home/azureuser/app.jar \
               '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;loginTimeout=30;' \
               \"--spring.datasource.username=\${SQL_USER}\" \
@@ -131,6 +131,6 @@ jobs:
               '--server.port=8080' \
               > /home/azureuser/app.log 2>&1 < /dev/null &
 
-            echo 'Java started successfully using Key Vault secrets'
+            echo 'Success: Java started on port 8080'
           "
         done
