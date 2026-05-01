@@ -9,7 +9,7 @@ on:
       - 'backend/**'
 
 env:
-  AZURE_WEBAPP_NAME: burger-be-app
+  AZURE_WEBAPP_NAME: burger-be-app # Replace if prefix changed
   JAVA_VERSION: '21'
 
 jobs:
@@ -18,17 +18,27 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
     steps:
     - uses: actions/checkout@v4
+
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
         cache: 'maven'
-    - name: Build with Maven
+
+    - name: Build and Test with Maven
       run: mvn clean verify
-    - name: Upload artifact
+
+    - name: SonarQube Scan
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: mvn sonar:sonar -Dsonar.projectKey=burger-backend -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} -Dsonar.login=${{ secrets.SONAR_TOKEN_BACKEND }}
+
+    - name: Upload artifact for deployment
       uses: actions/upload-artifact@v4
       with:
         name: backend-app
@@ -38,49 +48,58 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     if: github.ref == 'refs/heads/main'
+
     steps:
     - name: Download artifact
       uses: actions/download-artifact@v4
       with:
         name: backend-app
-        path: .
 
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
-    - name: Setup SSH agent
+    - name: Setup SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
 
-    - name: Deploy to BE VMSS
+    - name: Deploy to BE VMSS via SSH
       env:
         SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
       run: |
+        # Save private key to file
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
+        
+        # Get SonarQube Public IP
         SONAR_IP=$(az network public-ip show -g musa-project2-rg -n burger-sonar-pip --query ipAddress -o tsv)
+        
+        # Setup SSH config for ProxyJump
         cat << EOF > ~/.ssh/config
         Host sonarqube
           HostName $SONAR_IP
           User azureuser
           IdentityFile ~/.ssh/id_rsa
+          PubkeyAcceptedKeyTypes +ssh-rsa
           StrictHostKeyChecking no
+        
         Host 10.0.*
           User azureuser
           ProxyJump sonarqube
           IdentityFile ~/.ssh/id_rsa
+          PubkeyAcceptedKeyTypes +ssh-rsa
           StrictHostKeyChecking no
         EOF
         chmod 600 ~/.ssh/config
+        
+        # Get Private IPs of BE VMSS instances
         BE_IPS=$(az vmss nic list -g musa-project2-rg --vmss-name burger-vmss-be-musa --query "[].ipConfigurations[0].privateIPAddress" -o tsv)
+        
         for IP in $BE_IPS; do
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-          # 1. Убираем apt-get, так как Java уже стоит (это уберет ошибку 255)
-          # 2. Используем твой логин group2_sql
-          ssh $IP "sudo pkill -f 'java -jar' || true; sleep 2; nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;loginTimeout=30;' '--spring.datasource.username=group2_sql' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 5; ps aux | grep java"
+          ssh $IP "sudo apt-get update && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
         done
