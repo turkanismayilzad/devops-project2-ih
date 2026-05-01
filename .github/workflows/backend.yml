@@ -102,7 +102,7 @@ jobs:
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
 
-          # Это ТА САМАЯ строка, которая у тебя работала раньше. 
-          # Я добавил только DEBIAN_FRONTEND=noninteractive, чтобы Ubuntu не «зависала»
-          ssh $IP "export DEBIAN_FRONTEND=noninteractive; sudo apt-get update -qq && sudo apt-get install -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 2"
+          # Убираем apt-get совсем, так как Java уже стоит. 
+          # Это уберет ошибку 255 и ускорит деплой в 10 раз.
+          ssh $IP "sudo pkill -f 'java -jar' || true; sleep 2; nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 5; ps aux | grep java"
         done
