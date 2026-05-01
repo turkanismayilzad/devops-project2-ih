@@ -83,12 +83,11 @@ module "vmss_be" {
   ssh_public_key         = var.vm_ssh_public_key
   vm_size                = "Standard_D2ads_v7"
 
-  # Cloud-init: предустановка Java 21 и jq при создании сервера
+# Minimal cloud-init to install Java/Maven for Backend
   custom_data = base64encode(<<-EOF
     #!/bin/bash
-    export DEBIAN_FRONTEND=noninteractive
     sudo apt-get update
-    sudo apt-get install -y openjdk-21-jdk jq
+    sudo apt-get install -y openjdk-17-jdk maven
   EOF
   )
 }
@@ -113,51 +112,4 @@ module "monitoring" {
   vmss_be_id          = module.vmss_be.vmss_id
   sql_server_id       = module.database.sql_server_id
   sql_database_id     = "${module.database.sql_server_id}/databases/${module.database.database_name}"
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Managed Identity: BE VMSS → Key Vault
-# Вместо передачи пароля через командную строку (небезопасно!),
-# бэкенд-сервер сам получает секреты из Key Vault используя свою Managed Identity.
-# Пароль никогда не покидает Azure и не виден в логах.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Ссылка на уже существующий Key Vault (создан для TLS-сертификата)
-data "azurerm_key_vault" "kv" {
-  name                = "burger-keyvault-g2"
-  resource_group_name = azurerm_resource_group.rg.name
-}
-
-# Секрет 1: логин от SQL Server
-resource "azurerm_key_vault_secret" "sql_username" {
-  name         = "sql-admin-username"
-  value        = var.sql_admin_username
-  key_vault_id = data.azurerm_key_vault.kv.id
-
-  lifecycle {
-    # Не перезаписывать значение если секрет уже существует в Key Vault
-    ignore_changes = [value, version]
-  }
-}
-
-# Секрет 2: пароль от SQL Server
-resource "azurerm_key_vault_secret" "sql_password" {
-  name         = "sql-admin-password"
-  value        = var.sql_admin_password
-  key_vault_id = data.azurerm_key_vault.kv.id
-
-  lifecycle {
-    # Не перезаписывать значение если секрет уже существует в Key Vault
-    ignore_changes = [value, version]
-  }
-}
-
-# Выдать роль "Key Vault Secrets User" Managed Identity бэкенд-серверов.
-# Это позволяет BE VMSS читать секреты из Key Vault БЕЗ паролей.
-# skip_service_principal_aad_check — пропускает проверку AAD, нужно для VMSS Managed Identity.
-resource "azurerm_role_assignment" "be_vmss_kv_reader" {
-  scope                            = data.azurerm_key_vault.kv.id
-  role_definition_name             = "Key Vault Secrets User"
-  principal_id                     = module.vmss_be.principal_id
-  skip_service_principal_aad_check = true # Обязательно для SystemAssigned VMSS Identity
 }

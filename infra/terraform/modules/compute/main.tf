@@ -5,7 +5,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "vmss" {
   sku                 = var.vm_size
   instances           = 1
   admin_username      = var.admin_username
-  upgrade_mode        = "Manual"
+  upgrade_mode        = "Automatic"
 
   admin_ssh_key {
     username   = var.admin_username
