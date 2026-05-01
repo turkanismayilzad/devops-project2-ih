@@ -18,7 +18,6 @@ jobs:
     defaults:
       run:
         working-directory: backend
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up Java
@@ -27,7 +26,7 @@ jobs:
         java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
         cache: 'maven'
-    - name: Build and Test with Maven
+    - name: Build with Maven
       run: mvn clean verify
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -44,19 +43,19 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: backend-app
-        path: . # Скачиваем прямо в текущую папку, чтобы scp *.jar сработал
+        path: .
 
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
-    - name: Setup SSH
+    - name: Setup SSH agent
       uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
 
-    - name: Deploy
+    - name: Deploy to BE VMSS
       env:
         SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
       run: |
@@ -81,6 +80,6 @@ jobs:
         for IP in $BE_IPS; do
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-          # Добавляем DEBIAN_FRONTEND=noninteractive для стабильности
-          ssh $IP "export DEBIAN_FRONTEND=noninteractive; sudo apt-get update -qq && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
+          # Самая стабильная команда запуска
+          ssh $IP "export DEBIAN_FRONTEND=noninteractive; sudo apt-get update -qq && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null & sleep 5"
         done
