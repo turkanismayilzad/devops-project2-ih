@@ -17,21 +17,17 @@ jobs:
     defaults:
       run:
         working-directory: backend
-
     steps:
     - uses: actions/checkout@v4
-
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
         cache: 'maven'
-
-    - name: Build and Test with Maven
+    - name: Build with Maven
       run: mvn clean verify
-
-    - name: Upload artifact for deployment
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: backend-app
@@ -41,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     if: github.ref == 'refs/heads/main'
-
     steps:
     - name: Download artifact
       uses: actions/download-artifact@v4
@@ -54,31 +49,28 @@ jobs:
       with:
         creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
-    - name: Setup SSH
+    - name: Setup SSH for SCP
       uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
 
-    - name: Deploy to BE VMSS via SSH
+    - name: Deploy to BE VMSS
       env:
         SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+        SQL_USER: ${{ secrets.SQL_ADMIN_USERNAME }}
+        SQL_PASS: ${{ secrets.SQL_ADMIN_PASSWORD }}
       run: |
-        # Save private key to file
+        # 1. Настраиваем SSH только для копирования файла (SCP)
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        
-        # Get SonarQube Public IP
         SONAR_IP=$(az network public-ip show -g musa-project2-rg -n burger-sonar-pip --query ipAddress -o tsv)
-        
-        # Setup SSH config for ProxyJump
         cat << EOF > ~/.ssh/config
         Host sonarqube
           HostName $SONAR_IP
           User azureuser
           IdentityFile ~/.ssh/id_rsa
           StrictHostKeyChecking no
-        
         Host 10.0.*
           User azureuser
           ProxyJump sonarqube
@@ -86,13 +78,33 @@ jobs:
           StrictHostKeyChecking no
         EOF
         chmod 600 ~/.ssh/config
-        
-        # Get Private IPs of BE VMSS instances
+
+        # 2. Получаем список IP и ID инстансов
         BE_IPS=$(az vmss nic list -g musa-project2-rg --vmss-name burger-vmss-be-musa --query "[].ipConfigurations[0].privateIPAddress" -o tsv)
+        INSTANCE_IDS=$(az vmss list-instances -g musa-project2-rg -n burger-vmss-be-musa --query "[].instanceId" -o tsv)
         
+        # 3. Копируем JAR файл через SCP (это обычно работает стабильно)
         for IP in $BE_IPS; do
-          echo "Deploying to $IP..."
+          echo "Copying JAR to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-          # Используем правильную строку подключения и порт 8080
-          ssh $IP "sudo pkill -f 'java -jar' || true && sleep 2 && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
+        done
+
+        # 4. Запускаем приложение через az vmss run-command (САМЫЙ НАДЕЖНЫЙ СПОСОБ)
+        for ID in $INSTANCE_IDS; do
+          echo "Starting Java on instance $ID..."
+          az vmss run-command invoke \
+            -g musa-project2-rg \
+            -n burger-vmss-be-musa \
+            --instance-id $ID \
+            --command-id RunShellScript \
+            --scripts "
+              sudo pkill -f 'java -jar' || true
+              sleep 2
+              nohup java -jar /home/azureuser/app.jar \
+                --spring.datasource.url='jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' \
+                --spring.datasource.username='$SQL_USER' \
+                --spring.datasource.password='$SQL_PASS' \
+                --server.port=8080 \
+                > /home/azureuser/app.log 2>&1 < /dev/null &
+            "
         done
