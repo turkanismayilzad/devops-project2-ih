@@ -101,5 +101,26 @@ jobs:
         for IP in $BE_IPS; do
           echo "Deploying to $IP..."
           scp *.jar $IP:/home/azureuser/app.jar
-          ssh $IP "sudo apt-get update && sudo apt-get install -y openjdk-21-jdk && sudo pkill -f 'java -jar' || true && nohup java -jar /home/azureuser/app.jar '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;' '--spring.datasource.username=${{ secrets.SQL_ADMIN_USERNAME }}' '--spring.datasource.password=${{ secrets.SQL_ADMIN_PASSWORD }}' '--server.port=8080' > /home/azureuser/app.log 2>&1 < /dev/null &"
+
+          # Запускаем Java на сервере.
+          # Секреты получаем из Key Vault через Managed Identity VM — пароль НИКОГДА не передаётся извне!
+          # VM автоматически аутентифицируется в Azure используя свою системную идентичность.
+          ssh $IP "
+            sudo apt-get update -qq && sudo apt-get install -y openjdk-21-jdk azure-cli
+            sudo pkill -f 'java -jar' || true
+
+            # Получаем секреты из Key Vault используя Managed Identity этой VM (без паролей!)
+            SQL_USER=\$(az keyvault secret show --vault-name burger-keyvault-g2 --name sql-admin-username --query value -o tsv)
+            SQL_PASS=\$(az keyvault secret show --vault-name burger-keyvault-g2 --name sql-admin-password --query value -o tsv)
+
+            # Запускаем Java — секреты получены локально на сервере, не переданы извне
+            nohup java -jar /home/azureuser/app.jar \
+              '--spring.datasource.url=jdbc:sqlserver://burger-sqlserver.database.windows.net:1433;database=burgerbuilder-group22;encrypt=true;trustServerCertificate=false;loginTimeout=30;' \
+              \"--spring.datasource.username=\${SQL_USER}\" \
+              \"--spring.datasource.password=\${SQL_PASS}\" \
+              '--server.port=8080' \
+              > /home/azureuser/app.log 2>&1 < /dev/null &
+
+            echo 'Java started via Managed Identity Key Vault auth'
+          "
         done

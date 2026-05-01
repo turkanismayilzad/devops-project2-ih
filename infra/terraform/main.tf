@@ -113,3 +113,46 @@ module "monitoring" {
   sql_server_id       = module.database.sql_server_id
   sql_database_id     = "${module.database.sql_server_id}/databases/${module.database.database_name}"
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Managed Identity: BE VMSS → Key Vault
+# Вместо передачи пароля через командную строку (небезопасно!),
+# бэкенд-сервер сам получает секреты из Key Vault используя свою Managed Identity.
+# Пароль никогда не покидает Azure и не виден в логах.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Ссылка на уже существующий Key Vault (создан для TLS-сертификата)
+data "azurerm_key_vault" "kv" {
+  name                = "burger-keyvault-g2"
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+# Секрет 1: логин от SQL Server
+resource "azurerm_key_vault_secret" "sql_username" {
+  name         = "sql-admin-username"
+  value        = var.sql_admin_username
+  key_vault_id = data.azurerm_key_vault.kv.id
+
+  lifecycle {
+    ignore_changes = [value] # Не перезаписывать если уже существует
+  }
+}
+
+# Секрет 2: пароль от SQL Server
+resource "azurerm_key_vault_secret" "sql_password" {
+  name         = "sql-admin-password"
+  value        = var.sql_admin_password
+  key_vault_id = data.azurerm_key_vault.kv.id
+
+  lifecycle {
+    ignore_changes = [value] # Не перезаписывать если уже существует
+  }
+}
+
+# Выдать роль "Key Vault Secrets User" Managed Identity бэкенд-серверов
+# Это позволяет BE VMSS читать секреты из Key Vault БЕЗ паролей
+resource "azurerm_role_assignment" "be_vmss_kv_reader" {
+  scope                = data.azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.vmss_be.principal_id
+}
