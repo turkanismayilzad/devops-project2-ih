@@ -1,12 +1,14 @@
 prefix   = "burger"
 location = "UK South"
 
-vnet_address_space           = "10.0.0.0/16"
-appgw_subnet_prefix          = "10.0.1.0/24"
-fe_integration_subnet_prefix = "10.0.2.0/24"
-be_integration_subnet_prefix = "10.0.3.0/24"
-pep_subnet_prefix            = "10.0.4.0/24"
-ops_subnet_prefix            = "10.0.5.0/24"
+resource_group_name = "musa-project2-rg"
+
+vnet_address_space  = "10.0.0.0/16"
+appgw_subnet_prefix = "10.0.1.0/24"
+fe_subnet_prefix    = "10.0.2.0/24"
+be_subnet_prefix    = "10.0.3.0/24"
+pep_subnet_prefix   = "10.0.4.0/24"
+ops_subnet_prefix   = "10.0.5.0/24"
 
 db_name           = "burgerbuilder-group22"
 app_service_sku   = "P1v3"

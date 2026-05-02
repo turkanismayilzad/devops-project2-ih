@@ -17,6 +17,8 @@ env:
   TF_VAR_sql_admin_password: ${{ secrets.SQL_ADMIN_PASSWORD }}
   TF_VAR_vm_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
   TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_resource_group_name: musa-project2-rg
+  AZURE_RESOURCE_GROUP_NAME: musa-project2-rg
 
 jobs:
   terraform:
@@ -59,6 +61,19 @@ jobs:
 
     - name: Terraform Validate
       run: terraform validate
+
+    - name: Import Existing Resource Group
+      run: |
+        RG_NAME="${AZURE_RESOURCE_GROUP_NAME}"
+        RG_ID="/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}"
+
+        if terraform state show azurerm_resource_group.rg >/dev/null 2>&1; then
+          echo "Resource group already exists in Terraform state: ${RG_NAME}"
+        elif az group exists --name "${RG_NAME}" | grep -q true; then
+          terraform import azurerm_resource_group.rg "${RG_ID}"
+        else
+          echo "Resource group does not exist yet. Terraform will create it: ${RG_NAME}"
+        fi
 
     - name: Terraform Plan
       run: terraform plan -out=tfplan

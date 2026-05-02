@@ -10,6 +10,12 @@ variable "location" {
   default     = "East US"
 }
 
+variable "resource_group_name" {
+  description = "Name of the Azure resource group used by the project"
+  type        = string
+  default     = "musa-project2-rg"
+}
+
 # (Virtual Network)
 variable "vnet_address_space" {
   type    = string

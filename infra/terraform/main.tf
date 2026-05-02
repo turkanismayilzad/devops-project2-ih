@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "rg" {
-  name     = "musa-project2-rg"
+  name     = var.resource_group_name
   location = var.location
 }
 
@@ -46,7 +46,7 @@ module "app_gateway" {
   appgw_public_ip_id  = azurerm_public_ip.appgw_pip.id
 
   # TLS: Managed Identity для App Gateway — сделан через Azure CLI
-  appgw_identity_id = "/subscriptions/${var.subscription_id}/resourceGroups/musa-project2-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/burger-appgw-identity"
+  appgw_identity_id = "/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/burger-appgw-identity"
 
   # TLS: Secret ID сертификата в Key Vault (Let's Encrypt - действует до 30.07.2026)
   key_vault_cert_secret_id = "https://burger-keyvault-g2.vault.azure.net/secrets/burgergroup2-cert/8a4a802d17344c6e8749b41316738fd2"
