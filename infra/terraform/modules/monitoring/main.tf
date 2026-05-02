@@ -6,7 +6,6 @@ resource "azurerm_log_analytics_workspace" "law" {
   retention_in_days   = 30
 }
 
-# Создаем Application Insights — сервис для мониторинга производительности самого приложения (APM)
 resource "azurerm_application_insights" "appinsights" {
   name                = "${var.prefix}-appinsights"
   location            = var.location
@@ -15,23 +14,88 @@ resource "azurerm_application_insights" "appinsights" {
   application_type    = "web"
 }
 
-# Создаем Action Group — это группа действий, которая срабатывает при тревоге (Alert)
+# Logic App для пересылки алертов в Telegram
+# Это Serverless компонент, который будет дергать Telegram API
+resource "azurerm_logic_app_workflow" "telegram_forwarder" {
+  name                = "${var.prefix}-telegram-forwarder"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+}
+
+#webhook url(azure send it to logic app)
+resource "azurerm_logic_app_trigger_http_request" "http_trigger" {
+  name         = "AlertTrigger"
+  logic_app_id = azurerm_logic_app_workflow.telegram_forwarder.id
+  schema       = <<SCHEMA
+{
+    "type": "object",
+    "properties": {
+        "schemaId": { "type": "string" },
+        "data": {
+            "type": "object",
+            "properties": {
+                "status": { "type": "string" },
+                "context": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "description": { "type": "string" },
+                        "severity": { "type": "string" }
+                    }
+                }
+            }
+        }
+    }
+}
+SCHEMA
+}
+
+# Экшн для отправки в Telegram через HTTP POST
+resource "azurerm_logic_app_action_http" "telegram_post" {
+  name         = "SendToTelegram"
+  logic_app_id = azurerm_logic_app_workflow.telegram_forwarder.id
+  method       = "POST"
+  uri          = "https://api.telegram.org/bot${var.telegram_bot_token}/sendMessage"
+  body         = <<BODY
+{
+  "chat_id": "${var.telegram_chat_id}",
+  "text": "🚀 *Group2's Infra Shield - MONITORING REPORT* 🚀\n\n📡 *STATUS:* @{triggerBody()?['data']?['status']}\n🔥 *SEVERITY:* @{triggerBody()?['data']?['context']?['severity']}\n\n📝 *INCIDENT DETAILS:*\n> *Alert:* @{triggerBody()?['data']?['context']?['name']}\n> *Description:* @{triggerBody()?['data']?['context']?['description']}\n\n🔗 *VIEW ON AZURE PORTAL:*\n[Click here to verify incident](https://portal.azure.com/#resource/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}/alerts)\n\n⏰ *Timestamp:* @{utcNow('yyyy-MM-dd HH:mm:ss')} UTC\n━━━━━━━━━━━━━━━━━━━━\n✅ *Everything else is under control.*",
+  "parse_mode": "Markdown"
+}
+BODY
+}
+
 resource "azurerm_monitor_action_group" "ag" {
   name                = "${var.prefix}-actiongroup"
   resource_group_name = var.resource_group_name
-  short_name          = "alerts"
+  short_name          = "MusaShield"
 
-  # Minimal action group to satisfy requirement (you can add email receivers later)
+  # 1. Уведомление на Email
+  email_receiver {
+    name                    = "EmailAlert"
+    email_address           = var.alert_email
+    use_common_alert_schema = true
+  }
+
+  # 2. Уведомление в Telegram (через наш Logic App)
+  logic_app_receiver {
+    name                    = "TelegramAlert"
+    resource_id             = azurerm_logic_app_workflow.telegram_forwarder.id
+    callback_url            = azurerm_logic_app_trigger_http_request.http_trigger.callback_url
+    use_common_alert_schema = true
+  }
 }
 
-# 1. App Gateway Backend Health Alert
+# --- Alerts (оставляем те же, но они теперь используют обновленную Action Group) ---
+
 resource "azurerm_monitor_metric_alert" "appgw_health" {
   name                = "${var.prefix}-alert-appgw-health"
   resource_group_name = var.resource_group_name
   scopes              = [var.appgw_id]
-  description         = "Action will be triggered when Unhealthy Host Count > 0"
+  description         = "Unhealthy Host Count > 0 on Application Gateway"
   severity            = 1
-  window_size         = "PT5M"
+  window_size         = "PT1M"
+  frequency           = "PT1M"
 
   criteria {
     metric_namespace = "Microsoft.Network/applicationGateways"
@@ -41,18 +105,16 @@ resource "azurerm_monitor_metric_alert" "appgw_health" {
     threshold        = 0
   }
 
-  # Что делать при тревоге (вызвать Action Group)
   action {
     action_group_id = azurerm_monitor_action_group.ag.id
   }
 }
 
-# 2. VMSS FE CPU Alert
 resource "azurerm_monitor_metric_alert" "vmss_fe_cpu" {
   name                = "${var.prefix}-alert-vmss-fe-cpu-musa"
   resource_group_name = var.resource_group_name
   scopes              = [var.vmss_fe_id]
-  description         = "Action will be triggered when CPU Percentage is greater than 70%"
+  description         = "CPU Percentage > 70% on Frontend VMSS"
   severity            = 2
   window_size         = "PT5M"
 
@@ -69,12 +131,11 @@ resource "azurerm_monitor_metric_alert" "vmss_fe_cpu" {
   }
 }
 
-# 3. VMSS BE CPU Alert
 resource "azurerm_monitor_metric_alert" "vmss_be_cpu" {
   name                = "${var.prefix}-alert-vmss-be-cpu-musa"
   resource_group_name = var.resource_group_name
   scopes              = [var.vmss_be_id]
-  description         = "Action will be triggered when CPU Percentage is greater than 70%"
+  description         = "CPU Percentage > 70% on Backend VMSS"
   severity            = 2
   window_size         = "PT5M"
 
@@ -91,12 +152,11 @@ resource "azurerm_monitor_metric_alert" "vmss_be_cpu" {
   }
 }
 
-# 3. SQL Database CPU Alert (DTU/vCore approximation)
 resource "azurerm_monitor_metric_alert" "sql_cpu" {
   name                = "${var.prefix}-alert-sql-cpu"
   resource_group_name = var.resource_group_name
   scopes              = [var.sql_database_id]
-  description         = "Action will be triggered when SQL CPU > 80%"
+  description         = "SQL Database CPU Usage > 80%"
   severity            = 2
   window_size         = "PT5M"
 

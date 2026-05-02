@@ -13,6 +13,11 @@ output "sonar_public_ip_raw" {
   value       = module.sonarqube_vm.sonar_public_ip
 }
 
+output "telegram_bot_link" {
+  description = "Link to your monitoring bot"
+  value       = "https://t.me/Your_Bot_Name_Here" # Поменяй на имя своего бота
+}
+
 output "sonar_ssh_command" {
   description = "SSH command to connect to SonarQube VM"
   value       = "ssh ${var.vm_admin_username}@${module.sonarqube_vm.sonar_public_ip}" # Собираем команду: ssh имя_пользователя@IP_адрес

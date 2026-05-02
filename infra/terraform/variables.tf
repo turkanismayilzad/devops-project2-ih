@@ -92,3 +92,22 @@ variable "subscription_id" {
   type        = string
   sensitive   = true
 }
+
+variable "alert_email" {
+  description = "Email address for monitoring alerts"
+  type        = string
+  default     = "musaxasmammedov77@gmail.com"
+}
+
+variable "telegram_bot_token" {
+  description = "Telegram Bot Token"
+  type        = string
+  sensitive   = true
+  default     = "none"
+}
+
+variable "telegram_chat_id" {
+  description = "Telegram Chat ID"
+  type        = string
+  default     = "none"
+}
