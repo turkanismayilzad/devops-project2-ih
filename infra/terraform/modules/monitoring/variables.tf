@@ -1,6 +1,7 @@
 variable "prefix" { type = string }
 variable "location" { type = string }
 variable "resource_group_name" { type = string }
+variable "subscription_id" { type = string }
 variable "appgw_id" { type = string }
 variable "vmss_fe_id" { type = string }
 variable "vmss_be_id" { type = string }

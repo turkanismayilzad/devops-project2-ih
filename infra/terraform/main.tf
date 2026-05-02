@@ -115,4 +115,5 @@ module "monitoring" {
   alert_email         = var.alert_email
   telegram_bot_token  = var.telegram_bot_token
   telegram_chat_id    = var.telegram_chat_id
+  subscription_id     = var.subscription_id
 }
