@@ -35,11 +35,19 @@ jobs:
     - name: Run Tests & Coverage
       run: npm run test:coverage
 
+    - name: Normalize SonarQube URL
+      env:
+        RAW_SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: |
+        SONAR_HOST_URL_CLEAN=$(printf '%s' "$RAW_SONAR_HOST_URL" | tr -d '\r\n')
+        SONAR_HOST_URL_CLEAN="${SONAR_HOST_URL_CLEAN%/}"
+        echo "SONAR_HOST_URL=${SONAR_HOST_URL_CLEAN}" >> "$GITHUB_ENV"
+
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v2
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
-        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
       with:
         projectBaseDir: frontend
         args: >
