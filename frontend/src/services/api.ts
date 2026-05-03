@@ -83,3 +83,12 @@ export const getOrdersBySession = async (sessionId: string): Promise<Order[]> =>
 
 export default apiClient;
 
+
+// AI Agent API
+export const askAIAgent = async (message: string, menuItems: Ingredient[]): Promise<string> => {
+  const response = await apiClient.post<{ reply: string }>('/api/ai/chat', {
+    message,
+    menuItems,
+  });
+  return response.data.reply;
+};

@@ -7,6 +7,7 @@ import BurgerBuilder from './components/BurgerBuilder/BurgerBuilder';
 import Cart from './components/Cart/Cart';
 import OrderSummary from './components/OrderSummary/OrderSummary';
 import OrderHistory from './components/OrderHistory/OrderHistory';
+import AIAgent from './components/AIAgent/AIAgent';
 import './App.css';
 
 const App: React.FC = () => {
@@ -21,6 +22,7 @@ const App: React.FC = () => {
               <Route path="/checkout" element={<OrderSummary />} />
               <Route path="/orders" element={<OrderHistory />} />
             </Routes>
+            <AIAgent ingredients={[]} onAddToCart={() => {}} />
           </Layout>
         </BurgerBuilderProvider>
       </CartProvider>
