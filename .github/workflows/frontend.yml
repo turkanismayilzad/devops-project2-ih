@@ -55,6 +55,11 @@ jobs:
           -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
 
     - name: Build
+      env:
+        VITE_AZURE_OPENAI_ENDPOINT: ${{ secrets.VITE_AZURE_OPENAI_ENDPOINT }}
+        VITE_AZURE_OPENAI_KEY: ${{ secrets.VITE_AZURE_OPENAI_KEY }}
+        VITE_AZURE_SPEECH_KEY: ${{ secrets.VITE_AZURE_SPEECH_KEY }}
+        VITE_AZURE_SPEECH_REGION: ${{ secrets.VITE_AZURE_SPEECH_REGION }}
       run: npm run build
 
     - name: Zip Artifact
