@@ -35,14 +35,8 @@
 }
 
 @keyframes slideIn {
-  from {
-    transform: translateX(400px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(400px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .error-banner {
@@ -58,7 +52,7 @@
 
 .builder-container {
   display: grid;
-  grid-template-columns: 1fr 400px;
+  grid-template-columns: 1fr 420px;
   gap: 2rem;
   align-items: start;
 }
@@ -87,13 +81,16 @@
 .builder-right {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
+  position: sticky;
+  top: 20px;
+  align-self: flex-start;
 }
 
 .builder-actions {
   background: white;
   border-radius: 16px;
-  padding: 1.5rem;
+  padding: 1.2rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -101,27 +98,30 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background: linear-gradient(135deg, #f6f8fb 0%, #e9ecef 100%);
+  padding: 1rem 1.2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
-  margin-bottom: 1rem;
+  margin-top: 0.8rem;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .price-label {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #333;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: white;
 }
 
 .price-value {
   font-size: 1.8rem;
-  font-weight: 700;
-  color: #667eea;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.15);
 }
 
 .action-buttons {
   display: flex;
   gap: 1rem;
+  margin-top: 0.8rem;
 }
 
 .clear-button,
@@ -165,28 +165,15 @@
   .builder-container {
     grid-template-columns: 1fr;
   }
-
   .builder-right {
     order: -1;
+    position: static;
   }
 }
 
 @media (max-width: 768px) {
-  .builder-header h1 {
-    font-size: 2rem;
-  }
-
-  .builder-header p {
-    font-size: 1rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-  }
-
-  .notification {
-    right: 10px;
-    left: 10px;
-  }
+  .builder-header h1 { font-size: 2rem; }
+  .builder-header p { font-size: 1rem; }
+  .action-buttons { flex-direction: column; }
+  .notification { right: 10px; left: 10px; }
 }
-
