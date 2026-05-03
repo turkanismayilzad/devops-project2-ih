@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 interface Message {
@@ -13,8 +13,9 @@ interface Props {
 
 export const AIAgent = ({ ingredients }: Props) => {
   const [open, setOpen] = useState(true);
+  const [started, setStarted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'agent', text: 'Hello! I am Burger AI 🍔 Say your order or type below!' }
+    { role: 'agent', text: 'Hello! I am Burger AI 🍔 Click the mic or anywhere to start voice mode!' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,8 +24,7 @@ export const AIAgent = ({ ingredients }: Props) => {
 
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const synthesizerRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
-  const autoStartedRef = useRef(false);
-  const voiceModeRef = useRef(true); // <-- əsl fix budur
+  const voiceModeRef = useRef(true);
 
   const speechKey = import.meta.env.VITE_AZURE_SPEECH_KEY;
   const speechRegion = import.meta.env.VITE_AZURE_SPEECH_REGION;
@@ -82,21 +82,18 @@ export const AIAgent = ({ ingredients }: Props) => {
     const next = !voiceModeRef.current;
     voiceModeRef.current = next;
     setVoiceMode(next);
-    if (!next) {
-      stopAll();
-    }
+    if (!next) stopAll();
   };
 
-  useEffect(() => {
-    if (autoStartedRef.current) return;
-    autoStartedRef.current = true;
-    setTimeout(() => {
-      speak(
-        'Hello! Welcome to Burger Builder. I am your AI assistant. Please say your order and I will build it for you!',
-        () => startListening()
-      );
-    }, 800);
-  }, []);
+  // İstifadəçi ilk dəfə kliklədikdə başla
+  const handleFirstInteraction = () => {
+    if (started) return;
+    setStarted(true);
+    speak(
+      'Hello! Welcome to Burger Builder. I am your AI assistant. Please say your order!',
+      () => startListening()
+    );
+  };
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -139,7 +136,6 @@ export const AIAgent = ({ ingredients }: Props) => {
       };
       const reply = data.choices[0].message.content;
       setMessages(prev => [...prev, { role: 'agent', text: reply }]);
-
       speak(reply, () => {
         if (voiceModeRef.current) startListening();
       });
@@ -152,7 +148,10 @@ export const AIAgent = ({ ingredients }: Props) => {
   };
 
   return (
-    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 1000, fontFamily: 'sans-serif' }}>
+    <div
+      style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 1000, fontFamily: 'sans-serif' }}
+      onClick={handleFirstInteraction}
+    >
       {open && (
         <div style={{
           width: '340px', background: '#fff', borderRadius: '16px',
@@ -167,13 +166,12 @@ export const AIAgent = ({ ingredients }: Props) => {
             <div>
               <strong>🍔 Burger AI Agent</strong>
               <p style={{ margin: '2px 0 0', fontSize: '12px', opacity: 0.85 }}>
-                {listening ? '🎤 Listening...' : voiceMode ? '🔊 Voice mode ON' : '⌨️ Type your order'}
+                {!started ? '👆 Click to start voice mode' : listening ? '🎤 Listening...' : voiceMode ? '🔊 Voice mode ON' : '⌨️ Type your order'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button
-                onClick={toggleVoiceMode}
-                title={voiceMode ? 'Turn off voice mode' : 'Turn on voice mode'}
+                onClick={e => { e.stopPropagation(); toggleVoiceMode(); }}
                 style={{
                   background: voiceMode ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)',
                   border: '1px solid rgba(255,255,255,0.4)',
@@ -185,7 +183,7 @@ export const AIAgent = ({ ingredients }: Props) => {
                 {voiceMode ? '🔊 ON' : '🔇 OFF'}
               </button>
               <button
-                onClick={() => { stopAll(); setOpen(false); }}
+                onClick={e => { e.stopPropagation(); stopAll(); setOpen(false); }}
                 style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}
               >×</button>
             </div>
@@ -223,6 +221,7 @@ export const AIAgent = ({ ingredients }: Props) => {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
+              onClick={e => e.stopPropagation()}
               placeholder="Type your order..."
               style={{
                 flex: 1, padding: '8px 12px', borderRadius: '8px',
@@ -230,7 +229,7 @@ export const AIAgent = ({ ingredients }: Props) => {
               }}
             />
             <button
-              onClick={listening ? stopAll : startListening}
+              onClick={e => { e.stopPropagation(); listening ? stopAll() : startListening(); }}
               style={{
                 padding: '8px 10px', borderRadius: '8px',
                 background: listening ? '#e63946' : '#f0f0f0',
@@ -240,7 +239,7 @@ export const AIAgent = ({ ingredients }: Props) => {
               }}
             >🎤</button>
             <button
-              onClick={() => sendMessage(input)}
+              onClick={e => { e.stopPropagation(); sendMessage(input); }}
               style={{
                 padding: '8px 12px', borderRadius: '8px',
                 background: '#e63946', color: '#fff',
